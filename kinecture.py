@@ -5,8 +5,11 @@
 __author__ = 'julenka'
 
 import math
-import pandas as pd
 import numpy as np
+import sys
+import matplotlib.pyplot as plt
+import seaborn as sns
+import sklearn.metrics
 
 def remove_columns(data, columns):
     for column_name in columns:
@@ -14,6 +17,11 @@ def remove_columns(data, columns):
             del data[column_name]
         else:
             print("column {} not found (may already be removed)".format(column_name))
+
+def clean_data(data):
+    result = data.copy()
+    remove_columns(result, ['id', 'order', 'SISP', 'SNS', 'audTime', 'heuristic'])
+    return result
 
 def gen_features(data):
     """ Given pandas dataframe with raw data, remove unused data and add features
@@ -43,6 +51,7 @@ def gen_features(data):
     result['Truth'] = labels
     return result
 
+
 def remap_labels(label_map, labels):
     result = []
     for i, label in enumerate(labels):
@@ -57,7 +66,7 @@ def categorical_to_index(categorical_column):
     result = {cv: i for i, cv in enumerate(categorical_values)}
     return result
 
-class LabeledDataForSklearn():
+class LabeledDataForSklearn:
     def __init__(self, X, y):
         self.X = X
         self.y = y
@@ -84,9 +93,9 @@ def convert_features_for_sklearn(data):
 
     return LabeledDataForSklearn(np.array(X), np.array(y))
 
-import sys
+
 def print_cm(cm, labels, hide_zeroes=False, hide_diagonal=False, hide_threshold=None):
-    """pretty print for confusion matrixes"""
+    """pretty print for confusion matrices"""
     columnwidth = max([len(x) for x in labels]+[5]) # 7 is value length
     empty_cell = " " * columnwidth
     # Print header
@@ -109,7 +118,7 @@ def print_cm(cm, labels, hide_zeroes=False, hide_diagonal=False, hide_threshold=
         print()
     print()
 
-import sklearn.metrics
+
 def report_accuracy(predictions, actual, header=None):
     if header:
         print(header)
@@ -117,3 +126,91 @@ def report_accuracy(predictions, actual, header=None):
     class_names = ["S", "SI", "TA"]
     print_cm(cm, class_names)
     print(sklearn.metrics.classification_report(actual, predictions, target_names=class_names))
+
+class ClassroomParams:
+    def __init__(self, classroom, roomX, roomY, Ltheta, Rtheta, dxL, dyL, dxR, dyR):
+        self.classroom = classroom
+        self.roomX = roomX
+        self.roomY = roomY
+        self.Ltheta = Ltheta
+        self.Rtheta = Rtheta
+        self.dxL = dxL
+        self.dyL = dyL
+        self.dxR = dxR
+        self.dyR = dyR
+
+        self.Rx = roomX - dxR
+        self.Ry = roomY - dyR
+
+        self.Lx = dxL
+        self.Ly = roomY - dyL
+
+classroom_param_map = {9: ClassroomParams(9, 226, 356, 317, 220, 7, 10, 22, 12),
+                       10:  ClassroomParams(10, 456, 317, 313, 221, 12, 6, 13, 8),
+                       11: ClassroomParams(11, 390, 334, 312, 222, 9, 11, 6, 48)}
+
+
+def gen_my_speaker_features(data):
+    result = data.copy()
+    for row_num, row in result.iterrows():
+        my_speaker_x, my_speaker_y = get_speakerxy_from_angles(row.session,
+                                                               row['angleLeft'],
+                                                               row['angleRight'])
+        result.loc[row_num, 'mySpeakerX'] = my_speaker_x
+        result.loc[row_num, 'mySpeakerY'] = my_speaker_y
+    return result
+
+def get_speakerxy_from_angles(classroom_number, left_angle, right_angle):
+    classroom_params = classroom_param_map[classroom_number]
+
+    left_angle_2 = classroom_params.Ltheta + left_angle
+    right_angle_2 = right_angle + classroom_params.Rtheta
+
+    # Clamp these bad boys
+    left_angle_2 = max( 271, min(359, left_angle_2))
+    right_angle_2 = max(181, min(349, right_angle_2))
+
+    # y = mx + b
+    left_m = -1 * math.tan(math.radians(left_angle_2))
+    left_b = classroom_params.Ly - left_m * classroom_params.Lx
+
+
+
+    right_m = math.tan(math.radians(right_angle_2))
+    right_b = classroom_params.Ry - right_m * classroom_params.Rx
+
+    a = left_m
+    b = left_b
+    c = right_m
+    d = right_b
+
+    return left_angle_2, right_angle_2 # (b - d) / (c - a), (b - d) / (c - a) # a * (b - d) / (c - a) + b
+
+def plot_distributions(data, columns, num_subplot_cols, figsize=(20, 50)):
+    num_subplot_rows = math.ceil(len(columns) / num_subplot_cols)
+    fig, axes = plt.subplots(num_subplot_rows, num_subplot_cols, squeeze=False)
+    for i, column in enumerate(columns):
+        # Tutorial at http://stanford.edu/~mwaskom/software/seaborn/tutorial/distributions.html#distribution-tutorial
+        # Plot a histogram
+        sns.distplot(data[column], ax=axes[i/num_subplot_cols][i%num_subplot_cols], kde=False)
+
+    # Make the figure big and look pretty
+    fig.set_size_inches(figsize, forward=True)
+    fig.tight_layout()
+
+def plot_timeseries(data, columns, num_subplot_cols, title=None, figsize=(20, 50)):
+    num_subplot_rows = math.ceil(len(columns) / num_subplot_cols)
+    fig, axes = plt.subplots(num_subplot_rows, num_subplot_cols, squeeze=False)
+    if title:
+        fig.suptitle(title, fontsize=18, y=1.08)
+    for i, column in enumerate(columns):
+        # Tutorial at http://stanford.edu/~mwaskom/software/seaborn/tutorial/distributions.html#distribution-tutorial
+        # Plot a histogram
+        ax = axes[i/num_subplot_cols][i % num_subplot_cols]
+        ax.plot(data[column])
+        ax.set_xlabel(column)
+
+    # Make the figure big and look pretty
+    fig.set_size_inches(figsize, forward=True)
+    fig.tight_layout()
+
