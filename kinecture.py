@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # coding=utf-8
-""" 
+""" Helper functions for Kinecture experiment.
 """
 __author__ = 'julenka'
 
@@ -20,7 +20,7 @@ def remove_columns(data, columns):
 
 def clean_data(data):
     result = data.copy()
-    remove_columns(result, ['id', 'order', 'SISP', 'SNS', 'audTime', 'heuristic'])
+    remove_columns(result, ['id', 'order', 'SISP', 'SNS', 'audTime', 'heuristic', 'timestampUNIX'])
     return result
 
 def gen_features(data):
@@ -33,20 +33,17 @@ def gen_features(data):
 
     # save the labels, then remove them from the dataframe (we'll add it back at the end)
     labels = result["Truth"]
-    # remove unused features, and the classlabel (we add it later)
-    remove_columns(result, ['id', 'order', 'SISP', 'SNS', 'audTime', 'heuristic', 'Truth'])
-    remove_columns(result, ['session', 'timestampUNIX'])
+
+    result = gen_my_speaker_features(result)
+    result['speakerXYNorm'] = (result['mySpeakerX'] ** 2 + result['mySpeakerY'] ** 2) ** 0.5
+
+    remove_columns(result, ['Truth'])
 
     # add new features
     result['logLoudnessLeft'] = result['loudnessLeft'].map(lambda x: math.log(x + 1e-5))
     result['logLoudnessRight'] = result['loudnessRight'].map(lambda x: math.log(x + 1e-5))
     result['averageLogLoudness'] = (result['logLoudnessLeft'] + result['logLoudnessRight']) / 2
-    result['silenceLeftAndRight'] = result['silenceLeft'] & result['silenceRight']
     result['silenceLeftOrRight'] = result['silenceLeft'] | result['silenceRight']
-    result['speakerXYNorm'] = (result['speakerX'] ** 2 + result['speakerY'] ** 2) ** 0.5
-    result['speakerXIs0'] = result['speakerX'] == 0
-    result['sinAngleLeft'] = result['angleLeft'].map(lambda x: math.sin(math.radians(x)))
-    result['sinAngleRight'] = result['angleRight'].map(lambda x: math.sin(math.radians(x)))
 
     result['Truth'] = labels
     return result
@@ -75,7 +72,6 @@ class LabeledDataForSklearn:
         X = np.append(self.X, other.X, axis=0)
         y = np.append(self.y, other.y, axis=0)
         return LabeledDataForSklearn(X, y)
-
 
 def convert_features_for_sklearn(data):
     """ Splits data into features and classlabel so sklearn can use it
@@ -145,9 +141,14 @@ class ClassroomParams:
         self.Lx = dxL
         self.Ly = roomY - dyL
 
-classroom_param_map = {9: ClassroomParams(9, 226, 356, 317, 220, 7, 10, 22, 12),
-                       10:  ClassroomParams(10, 456, 317, 313, 221, 12, 6, 13, 8),
-                       11: ClassroomParams(11, 390, 334, 312, 222, 9, 11, 6, 48)}
+# classroom_param_map = { 9: ClassroomParams(9, 226, 356, 317, 220, 7, 10, 22, 12),
+#                        10: ClassroomParams(10, 456, 317, 313, 221, 12, 6, 13, 8),
+#                        11: ClassroomParams(11, 390, 334, 312, 222, 9, 11, 6, 48)}
+# I had to modify the classroom params to make the y position of the kinects (dyR, dyL) match up, otherwise
+# speakerX and speakerY positions could be too large because the lines wouldn't intersect.
+classroom_param_map = { 9: ClassroomParams(9, 226, 356, 317, 220,  7, 10, 22, 10),
+                       10: ClassroomParams(10, 456, 317, 313, 221, 12, 6, 13, 6),
+                       11: ClassroomParams(11, 390, 334, 312, 222, 9, 11, 6, 11)}
 
 
 def gen_my_speaker_features(data):
@@ -158,23 +159,22 @@ def gen_my_speaker_features(data):
                                                                row['angleRight'])
         result.loc[row_num, 'mySpeakerX'] = my_speaker_x
         result.loc[row_num, 'mySpeakerY'] = my_speaker_y
+
     return result
 
 def get_speakerxy_from_angles(classroom_number, left_angle, right_angle):
     classroom_params = classroom_param_map[classroom_number]
 
     left_angle_2 = classroom_params.Ltheta + left_angle
-    right_angle_2 = right_angle + classroom_params.Rtheta
+    right_angle_2 = classroom_params.Rtheta + right_angle
 
     # Clamp these bad boys
-    left_angle_2 = max( 271, min(359, left_angle_2))
-    right_angle_2 = max(181, min(349, right_angle_2))
+    left_angle_2 = max(271, min(359, left_angle_2))
+    right_angle_2 = max(181, min(269, right_angle_2))
 
     # y = mx + b
-    left_m = -1 * math.tan(math.radians(left_angle_2))
+    left_m = math.tan(math.radians(left_angle_2))
     left_b = classroom_params.Ly - left_m * classroom_params.Lx
-
-
 
     right_m = math.tan(math.radians(right_angle_2))
     right_b = classroom_params.Ry - right_m * classroom_params.Rx
@@ -184,7 +184,13 @@ def get_speakerxy_from_angles(classroom_number, left_angle, right_angle):
     c = right_m
     d = right_b
 
-    return left_angle_2, right_angle_2 # (b - d) / (c - a), (b - d) / (c - a) # a * (b - d) / (c - a) + b
+    x = (b - d) / (c - a)
+    y = a * (b - d) / (c - a) + b
+
+    x = max(0, min(classroom_params.roomX, x)) / classroom_params.roomX
+    y = max(0, min(classroom_params.roomY, y)) / classroom_params.roomY
+
+    return x, y
 
 def plot_distributions(data, columns, num_subplot_cols, figsize=(20, 50)):
     num_subplot_rows = math.ceil(len(columns) / num_subplot_cols)

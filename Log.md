@@ -1,3 +1,8 @@
+#### September 4, 2015
+my own speakerX and speakerY computation didn't improve accuracy at all. Either the computations are wrong or the information is not helpful. Though I double checked them, they did not match speakerX and speakerY for the valid values, so possibly there is still an error here.
+
+Next steps are to see if adding more data will help (via a learning curve). Next look for different features. Perhaps you could extract frequency components from the audio data to determine silence/non-silence, since silence will probably have things that don't sound like voices.
+
 #### September 3, 2015
 Try to improve speakerX, speakerY computation but didn't quite finish.
 
