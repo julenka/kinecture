@@ -89,12 +89,13 @@ def convert_features_for_sklearn(data):
 
 def print_cm(cm, labels, hide_zeroes=False, hide_diagonal=False, hide_threshold=None):
     """pretty print for confusion matrices"""
-    columnwidth = max([len(x) for x in labels]+[5]) # 7 is value length
+    columnwidth = max([len(x) for x in labels]+[10]) # 10 is value length
     empty_cell = " " * columnwidth
     # Print header
     sys.stdout.write("    " + empty_cell)
     for label in labels:
         sys.stdout.write("%{0}s".format(columnwidth) % label)
+
     print()
     # Print rows
     for i, label1 in enumerate(labels):
@@ -113,9 +114,11 @@ def print_cm(cm, labels, hide_zeroes=False, hide_diagonal=False, hide_threshold=
 
 
 def report_accuracy(predictions, actual, header=None):
+    print()
     if header:
         print(header)
     cm = sklearn.metrics.confusion_matrix(actual, predictions)
     class_names = ["S", "SI", "TA"]
     print_cm(cm, class_names)
     print(sklearn.metrics.classification_report(actual, predictions, target_names=class_names))
+    print()
